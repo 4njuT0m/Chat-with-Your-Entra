@@ -1,0 +1,15 @@
+# Secrets - never commit these
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Raw tenant data pulled from Microsoft Graph
+output/
+
+# Editor and OS files
+.vscode/
+Thumbs.db
+.DS_Store
