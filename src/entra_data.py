@@ -30,18 +30,30 @@ def get_role_assignments() -> list[dict]:
     )
     role_names = {d["id"]: d["displayName"] for d in definitions}
 
+    # Some built-in roles are hidden from the roleDefinitions list.
+    # Activated roles (/directoryRoles) also carry the name, keyed by roleTemplateId.
+    for r in graph_get("/directoryRoles", params={"$select": "displayName,roleTemplateId"}):
+        role_names.setdefault(r["roleTemplateId"], r["displayName"])
+
     # Assignments, with the principal (user/group/app) expanded
     assignments = graph_get(
         "/roleManagement/directory/roleAssignments",
         params={"$expand": "principal"},
     )
 
+    # Last try for any role still without a name: ask for it directly by id
+    for role_id in {a["roleDefinitionId"] for a in assignments} - role_names.keys():
+        try:
+            role_names[role_id] = graph_get(f"/roleManagement/directory/roleDefinitions/{role_id}")["displayName"]
+        except RuntimeError:
+            role_names[role_id] = f"Unknown role ({role_id})"
+
     rows = []
     for a in assignments:
         principal = a.get("principal") or {}
         rows.append(
             {
-                "role": role_names.get(a["roleDefinitionId"], a["roleDefinitionId"]),
+                "role": role_names[a["roleDefinitionId"]],
                 "principal_name": principal.get("displayName"),
                 # "#microsoft.graph.user" -> "user"
                 "principal_type": (principal.get("@odata.type") or "").split(".")[-1],

@@ -25,7 +25,8 @@ def save(name: str, data) -> None:
     (OUTPUT_DIR / f"{name}.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def show_users() -> None:
+def show_users() -> dict:
+    """Print the users and return a map of user id -> UPN (used by the CA section)."""
     users = get_users()
     save("users", users)
 
@@ -37,6 +38,7 @@ def show_users() -> None:
         status = "enabled" if u.get("accountEnabled") else "DISABLED"
         print(f"- {u['displayName']:<30} {u['userType'] or '-':<7} {status:<9} {u['userPrincipalName']}")
     print()
+    return {u["id"]: u["userPrincipalName"] for u in users}
 
 
 def show_roles() -> None:
@@ -56,16 +58,34 @@ def show_roles() -> None:
     print()
 
 
-def show_ca_policies() -> None:
+def show_ca_policies(user_names: dict) -> None:
     policies = get_conditional_access_policies()
     save("conditional_access_policies", policies)
 
     print(f"===== Conditional Access policies: {len(policies)} =====")
     for p in policies:
-        grant = (p.get("grantControls") or {}).get("builtInControls") or []
-        client_apps = (p.get("conditions") or {}).get("clientAppTypes") or []
+        conditions = p.get("conditions") or {}
+        grant_controls = p.get("grantControls") or {}
+
+        # Grant can be built-in controls (mfa, block, ...) or an authentication strength
+        grant = list(grant_controls.get("builtInControls") or [])
+        strength = grant_controls.get("authenticationStrength")
+        if strength:
+            grant.append(f"auth strength: {strength['displayName']}")
+
+        users = conditions.get("users") or {}
+        who = [user_names.get(u, u) for u in users.get("includeUsers") or []]
+        if users.get("includeRoles"):
+            who.append(f"{len(users['includeRoles'])} role(s)")
+        if users.get("includeGroups"):
+            who.append(f"{len(users['includeGroups'])} group(s)")
+
+        apps = (conditions.get("applications") or {}).get("includeApplications") or []
+        client_apps = conditions.get("clientAppTypes") or []
+
         print(f"- {p['displayName']}")
-        print(f"    state: {p['state']} | grant: {', '.join(grant) or '-'} | client apps: {', '.join(client_apps) or '-'}")
+        print(f"    state: {p['state']} | grant: {', '.join(grant) or '-'}")
+        print(f"    users: {', '.join(who) or '-'} | apps: {', '.join(apps) or '-'} | client apps: {', '.join(client_apps) or '-'}")
     if not policies:
         print("No Conditional Access policies found.")
     print()
@@ -94,7 +114,7 @@ def show_mfa() -> None:
 
 
 if __name__ == "__main__":
-    show_users()
+    user_names = show_users()
     show_roles()
-    show_ca_policies()
+    show_ca_policies(user_names)
     show_mfa()
