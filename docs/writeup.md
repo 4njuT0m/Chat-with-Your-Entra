@@ -186,3 +186,67 @@ python src\agent.py                                                   # chat mod
 #### What I learned
 - Tenant data from tools was correct every time I checked it against the portal or Stage 1
 - General advice from the model's own knowledge can be outdated. Tool data can be trusted more than the model's memory
+
+### Part 2 - Microsoft MCP Server for Enterprise
+
+#### What I did
+- Turned on the Microsoft MCP Server for Enterprise in the Pearson tenant with PowerShell 7
+  - Signed in with `Connect-MgGraph` as the Pearson admin (delegated)
+  - Ran `Grant-EntraBetaMCPServerPermission -ApplicationName VisualStudioCode`
+  - Output: "Successfully granted permissions to Visual Studio Code"
+- Added the server to VS Code as a workspace server in `.vscode/mcp.json`, name `entra-enterprise`
+- VS Code found 3 tools on the server
+- Signed in to the server with the Pearson admin account
+- Asked Copilot (Agent mode) "Who are the Global Administrators?"
+  - Answer: 6 users and 2 service principals
+  - Same 8 as my own agent and the Entra portal
+
+![MCP server provisioning](../screenshots/17-mcp-provision.png)
+![MCP in VS Code: Global Admins](../screenshots/18-mcp-vscode-global-admins.png)
+
+#### Commands
+```powershell
+pwsh -NoProfile                                                     # PowerShell 7, nothing preloaded
+Install-Module Microsoft.Entra.Beta -Scope CurrentUser -Force -AllowClobber   # Entra PowerShell module
+Import-Module Microsoft.Graph.Authentication                         # Graph login module
+$tenantId = (Select-String -Path .env -Pattern '^PEARSON_TENANT_ID=(.+)$').Matches[0].Groups[1].Value.Trim()   # read tenant ID from .env
+Connect-MgGraph -TenantId $tenantId -Scopes 'Application.ReadWrite.All','Directory.Read.All','DelegatedPermissionGrant.ReadWrite.All' -NoWelcome   # sign in as admin
+Get-MgContext                                                       # check account and tenant
+Grant-EntraBetaMCPServerPermission -ApplicationName VisualStudioCode   # register the MCP server and allow VS Code
+```
+
+#### Security notes
+- The cmdlet granted all available scopes, about 40 `MCP.*` scopes
+  - One of them is a write scope: `MCP.EntitlementMgmt-SubjectAccess.ReadWrite`
+  - The cmdlet also takes `-Scopes`, so it can be limited to what is needed
+- Consent type is `AllPrincipals`: every user in the tenant can use VS Code with this server
+  - It is delegated, so each user still only sees what their own account can see
+
+#### Own agent vs MCP server
+
+| | My own agent | Microsoft MCP Server |
+|---|---|---|
+| Login | App-only, client secret | Delegated, signed-in user |
+| Tools | 4 tools I wrote | 3 generic tools that run read-only Graph queries |
+| What it can read | Only what my tools return | Any Graph data the user and scopes allow |
+| Control | I decide which data and fields go to the model | The model writes the Graph queries itself |
+| Setup | App registration + 4 permissions | PowerShell provisioning + VS Code sign-in |
+
+#### Challenges
+- The first PowerShell 7 window closed with exit code 2, and Windows PowerShell 5.1 could not load the module
+  - Fix: used PowerShell 7 with `pwsh -NoProfile`
+- `Install-Module` warned that `Microsoft.Graph.Authentication` was in use and could not update it
+- `Connect-Entra` failed: `Unable to find type [Microsoft.Graph.PowerShell.Authentication.ContextScope]`
+  - Fix: signed in with `Connect-MgGraph` instead. `Grant-EntraBetaMCPServerPermission` worked with that session
+- I typed the placeholder text instead of the tenant ID: `AADSTS900023`
+  - Fix: read the tenant ID from `.env` with `Select-String`
+- VS Code "Add Server" created `.mcp.json` with spaces in front of the name and URL, and the server did not start
+  - Copilot then answered from my own `docs/writeup.md` instead of live data, and the answer was incomplete (it missed `admin@`)
+  - Fix: created `.vscode/mcp.json` in the VS Code format
+- Next, the server showed "Authentication Required" and Copilot said the MCP tools were not available
+  - It did not make up an answer, which was good
+  - Fix: clicked "Authentication Required" and signed in with the Pearson admin
+
+#### What I learned
+- An AI assistant with access to local files can answer from old notes instead of live data. I have to check where an answer came from
+- The MCP server is quick to set up and very flexible, but it gives the model much more access than my own 4 tools
