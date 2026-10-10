@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "entra-enterprise": {
+      "type": "http",
+      "url": "https://mcp.svc.cloud.microsoft/enterprise"
+    }
+  }
+}
