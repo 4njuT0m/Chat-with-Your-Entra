@@ -77,3 +77,63 @@ python stage0\time_agent.py          # agent that can call the time tool
 ### Challenges
 - The project diagram shows GPT-4o, but every gpt-4o version is now deprecated or legacy in Azure
 - I used `gpt-5-mini` instead (GA, retirement date Feb 2027, after this project ends)
+
+## Stage 1 - Connecting to Entra
+
+### What I did
+- Registered an app `chat-with-your-entra-reader` in the Pearson lab tenant (Contoso), single tenant
+- Created a client secret and saved tenant ID, client ID and secret in `.env`
+- Added 4 Microsoft Graph application permissions and granted admin consent
+  - `User.Read.All` - users and guests
+  - `Directory.Read.All` - roles, role assignments, groups, apps
+  - `Policy.Read.All` - Conditional Access policies
+  - `AuditLog.Read.All` - MFA registration report
+- Did not add `RoleManagement.Read.Directory`, because `Directory.Read.All` already covers role assignments
+- `src/graph_client.py`: gets an app-only token (client credentials flow) and runs Graph GET requests, including paging
+- `src/entra_data.py`: functions for users, role assignments, Conditional Access policies and MFA registration
+- `src/pull_entra_data.py`: prints a summary and saves the raw JSON to `output/` (not in git)
+
+![App registration](../screenshots/06-app-registration.png)
+![API permissions](../screenshots/07-api-permissions.png)
+![Graph connection test](../screenshots/08-graph-connection.png)
+![Users](../screenshots/09-users.png)
+![Admin roles](../screenshots/10-roles.png)
+![Conditional Access policies](../screenshots/11-ca-policies.png)
+![MFA registration](../screenshots/12-mfa.png)
+
+### Results
+- 39 users, 0 guests, 1 disabled
+- 13 active role assignments in 5 roles
+- 8 Global Administrator assignments: 6 users and 2 service principals
+- 2 Conditional Access policies, both enabled, both only for `test4`
+- MFA report: 38 users, 36 without MFA
+
+### Attacker view
+- Global Admins are the main target: one account = full control of the tenant
+- 5 of the 6 Global Admin users have no MFA (AllanD, IsaiahL, LidiaH, MeganB, NestorW). A guessed or phished password is enough
+- 8 Global Admin assignments. Microsoft recommends fewer than 5
+- 2 apps hold Global Admin (`managedenvironments-ar-tenant-connector-ame`, `ProvisioningHealthPME`). Apps can't do MFA, so whoever has their credentials is a Global Admin. They look like lab or Microsoft apps, so this is "review", not "malicious"
+- The 2 Conditional Access policies only cover `test4`. No policy protects the admins or the other users
+- No policy blocks legacy authentication (checked properly in Stage 3)
+- 36 of 38 users have no MFA, so password spraying would likely work
+- `pim-test` is marked as admin in the MFA report but has no active role. It probably has an eligible (PIM) role, which my script does not read yet
+
+### Commands
+```powershell
+python -m pip install -r requirements.txt   # install msal and requests
+python src\graph_client.py                  # connection test: prints the tenant name
+python src\pull_entra_data.py               # users, admin roles, CA policies, MFA status
+```
+
+### Challenges
+- `pip install` was blocked: `An Application Control policy has blocked this file`
+  - Fix: `python -m pip install ...` runs pip through python.exe, which is allowed
+- First Graph call failed: `403 Authorization_RequestDenied`
+  - The token worked, but the permissions showed "Not granted for Contoso"
+  - Fix: clicked "Grant admin consent for Contoso"
+- 2 roles showed only an ID instead of a name
+  - Some built-in roles are hidden from the role definitions list
+  - Fix: also read `/directoryRoles` and ask for missing roles by ID. They were "AdHoc License Administrator" and "Email Verified User Creator"
+- One CA policy showed no grant control
+  - It uses an authentication strength (Phishing-resistant MFA), not the normal "mfa" control
+  - Fix: the script now also prints the authentication strength
