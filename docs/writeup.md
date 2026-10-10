@@ -137,3 +137,52 @@ python src\pull_entra_data.py               # users, admin roles, CA policies, M
 - One CA policy showed no grant control
   - It uses an authentication strength (Phishing-resistant MFA), not the normal "mfa" control
   - Fix: the script now also prints the authentication strength
+
+## Stage 2 - Giving the agent data access
+
+### Part 1 - Own tools with function calling
+
+#### What I did
+- `src/tools.py`: turned the 4 Stage 1 functions into tools
+  - `list_users`, `list_role_assignments`, `list_conditional_access_policies`, `get_mfa_status`
+  - Each tool has a JSON description (what the model sees) and a Python function (what my script runs)
+  - Results are trimmed to the fields that matter, so fewer tokens are sent
+- `prompts/system_prompt.md`: rules for the AI
+  - Use the tools, only state facts from tool results, never invent data, say when data is missing
+  - Known limits: no PIM eligible roles, MFA report has no disabled users, "MFA registered" does not mean "MFA enforced"
+- `src/agent.py`: agent loop
+  - The model can call tools several times before it answers (max 8 rounds)
+  - Every tool call is printed as `[tool] ...` so I can see what the agent does
+
+#### Tests
+- "Who are the Global Admins?"
+  - 1 tool call: `list_role_assignments` with role name "Global Administrator"
+  - Answer: 8 assignments, 6 users and 2 service principals
+  - Same 8 as the Entra portal (Roles & admins > Global Administrator > Active assignments)
+- "Which Global Admins have no MFA registered?"
+  - 2 tool calls: `list_role_assignments` and `get_mfa_status` (only admins, only without MFA)
+  - Answer: AllanD, IsaiahL, LidiaH, MeganB, NestorW. Same as my Stage 1 result
+- "Are the admins protected by Conditional Access?"
+  - 2 tool calls: `list_role_assignments` and `list_conditional_access_policies`
+  - Answer: no. Both policies only include `test4` and target no roles
+  - The agent also found that `admin@` is excluded from both policies. My Stage 1 script did not print exclusions, so I missed this
+- "What is the password expiry policy?"
+  - No tool call. It said the tools don't return password policy data. Good, it did not make up a tenant setting
+  - But its "how to check it yourself" tips were outdated: it used the old name "Azure AD" and suggested the MSOnline and AzureAD PowerShell modules, which Microsoft has retired
+
+![Agent: Global Admins](../screenshots/13-agent-global-admins.png)
+![Portal: Global Admins](../screenshots/14-portal-global-admins.png)
+![Agent: admins without MFA](../screenshots/15-agent-admins-no-mfa.png)
+![Agent: chat](../screenshots/16-agent-chat.png)
+
+#### Commands
+```powershell
+python src\tools.py                                                   # run every tool once without the AI
+python src\agent.py "Who are the Global Admins?"                      # one question, then exit
+python src\agent.py "Which Global Admins have no MFA registered?"     # needs 2 tools
+python src\agent.py                                                   # chat mode, type exit to stop
+```
+
+#### What I learned
+- Tenant data from tools was correct every time I checked it against the portal or Stage 1
+- General advice from the model's own knowledge can be outdated. Tool data can be trusted more than the model's memory
