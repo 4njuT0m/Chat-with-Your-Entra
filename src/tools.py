@@ -16,6 +16,7 @@ from entra_data import (
     get_role_assignments,
     get_users,
 )
+from checks import CHECKS, run_checks
 from graph_client import graph_get
 
 
@@ -112,7 +113,12 @@ def get_mfa_status(only_without_mfa: bool = False, only_admins: bool = False) ->
     ]
 
 
+def run_security_checks(check: str = "all") -> list[dict]:
+    return run_checks(check)
+
+
 TOOL_FUNCTIONS = {
+    "run_security_checks": run_security_checks,
     "list_users": list_users,
     "list_role_assignments": list_role_assignments,
     "list_conditional_access_policies": list_conditional_access_policies,
@@ -123,6 +129,28 @@ TOOL_FUNCTIONS = {
 # ---------- Tool descriptions (what the model sees) ----------
 
 TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_security_checks",
+            "description": (
+                "Run security checks on the tenant and return findings with status (PASS/FAIL/WARN/ERROR), "
+                "severity, evidence and a Microsoft reference link. Checks: legacy_auth (legacy authentication "
+                "blocked?), admin_mfa (admins have MFA registered and enforced?), sp_privileges (apps with "
+                "high-risk Graph permissions or admin roles), global_admins (fewer than 5 Global Admins?)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "check": {
+                        "type": "string",
+                        "enum": ["all"] + list(CHECKS),
+                        "description": "Which check to run. Default: all.",
+                    }
+                },
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
