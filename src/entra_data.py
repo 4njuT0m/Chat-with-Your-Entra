@@ -59,6 +59,7 @@ def get_role_assignments() -> list[dict]:
                 "principal_type": (principal.get("@odata.type") or "").split(".")[-1],
                 "principal_upn": principal.get("userPrincipalName"),
                 "principal_id": a["principalId"],
+                "role_id": a["roleDefinitionId"],
                 "scope": a.get("directoryScopeId"),
             }
         )
@@ -77,3 +78,33 @@ def get_mfa_registration() -> list[dict]:
     Disabled users are not included in this report.
     """
     return graph_get("/reports/authenticationMethods/userRegistrationDetails")
+
+
+def get_security_defaults() -> dict:
+    """Security defaults policy. isEnabled = true means Microsoft's baseline protections are on."""
+    return graph_get("/policies/identitySecurityDefaultsEnforcementPolicy")
+
+
+# Application ID of Microsoft Graph itself (the same in every tenant)
+GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
+
+
+def get_graph_app_permissions() -> list[dict]:
+    """Which apps (service principals) have Microsoft Graph application permissions.
+
+    Graph's own service principal lists every app permission granted to it
+    (appRoleAssignedTo). The appRoleId is translated to a name like "User.Read.All".
+    """
+    graph_sp = graph_get(f"/servicePrincipals(appId='{GRAPH_APP_ID}')", params={"$select": "id,appRoles"})
+    permission_names = {r["id"]: r["value"] for r in graph_sp["appRoles"]}
+
+    assignments = graph_get(f"/servicePrincipals(appId='{GRAPH_APP_ID}')/appRoleAssignedTo")
+    return [
+        {
+            "app": a["principalDisplayName"],
+            "principal_id": a["principalId"],
+            "principal_type": a["principalType"],
+            "permission": permission_names.get(a["appRoleId"], a["appRoleId"]),
+        }
+        for a in assignments
+    ]
