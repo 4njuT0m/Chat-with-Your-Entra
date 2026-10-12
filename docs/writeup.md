@@ -250,3 +250,84 @@ Grant-EntraBetaMCPServerPermission -ApplicationName VisualStudioCode   # registe
 #### What I learned
 - An AI assistant with access to local files can answer from old notes instead of live data. I have to check where an answer came from
 - The MCP server is quick to set up and very flexible, but it gives the model much more access than my own 4 tools
+
+## Stage 3 - Audit logic
+
+### What I did
+- Wrote `docs/audit-checklist.md` with 4 checks, each based on Microsoft documentation
+- Added 2 data functions to `src/entra_data.py`
+  - Security defaults on or off (`/policies/identitySecurityDefaultsEnforcementPolicy`)
+  - Which apps have Microsoft Graph application permissions (`appRoleAssignedTo` on the Microsoft Graph service principal)
+  - No new API permissions were needed. `Directory.Read.All` and `Policy.Read.All` already cover them
+- Wrote one Python file per check in `src/checks/`
+  - `legacy_auth.py` - is legacy authentication blocked by security defaults or a CA policy?
+  - `admin_mfa.py` - do admins have MFA registered, and is MFA enforced for them?
+  - `sp_privileges.py` - apps with high-risk Graph permissions or admin roles
+  - `global_admins.py` - fewer than 5 Global Admins?
+- The checks collect the evidence. The AI only explains the risk and the fix
+- Added the tool `run_security_checks` to the agent
+- Updated the system prompt with a finding format: Finding, Severity, Evidence, Why it is a risk, How to fix, Reference
+- `src/audit_report.py`: the agent runs the full audit and saves a Markdown report in `reports/`
+
+### Results
+| Check | Status | Severity | Finding |
+|---|---|---|---|
+| legacy_auth | FAIL | High | Legacy authentication is not blocked |
+| admin_mfa_registered | FAIL | High | 5 admins have no MFA registered |
+| admin_mfa_enforced | FAIL | High | MFA is not enforced for 6 admins |
+| sp_graph_permissions | FAIL | High | 9 high-risk Graph permissions on 3 apps |
+| sp_admin_roles | FAIL | High | 5 admin roles held by apps, 2 of them Global Administrator |
+| global_admin_count | FAIL | Medium | 8 Global Administrator assignments |
+
+- `admin@` has MFA registered, but no policy forces it. It is excluded from both CA policies
+- 2 apps (`ProvisioningHealthPME`, `managedenvironments-ar-tenant-connector-ame`) have `RoleManagement.ReadWrite.Directory` and the Global Administrator role
+- Security defaults are off and no CA policy blocks legacy authentication
+
+![Checks without AI](../screenshots/19-run-checks.png)
+![Agent audit](../screenshots/20-agent-audit.png)
+![Baseline report](../screenshots/21-baseline-report.png)
+
+### Hallucination check of the first report
+I compared the first report (`reports/baseline-report-v1.md`) with the raw tool data in `output/findings.json`.
+
+- Facts: no hallucination. All users, apps, permissions and numbers matched the tool data
+- The "How to fix" parts came from the model's own knowledge and had problems:
+
+| What the AI wrote | Problem |
+|---|---|
+| Block legacy auth for "Other clients" | Incomplete. Microsoft says Exchange ActiveSync and Other clients, for all users, exclude emergency accounts |
+| "Authentication methods > Require registration" | This menu does not exist |
+| "Users > Per-user MFA" | Old method. Microsoft recommends Conditional Access |
+| Check that "L1-Phishing-Resistant-MFA" has "Require MFA" | That policy uses an authentication strength, not "Require MFA" |
+| Remove the permissions from the lab apps | No warning that removing them can break Microsoft or lab apps |
+
+- Also: the evidence was raw JSON and the report had 2 titles
+
+### What I changed
+- Each check now returns a `microsoft_guidance` field with the fix taken from the Microsoft docs
+- New prompt rules
+  - "How to fix" must be based only on `microsoft_guidance`, no invented menu paths
+  - Evidence as a short list, never raw JSON
+  - No extra title in the report
+- Second report (`reports/baseline-report.md`)
+  - Same facts as before, all correct
+  - Fixes now match the Microsoft guidance word for word
+  - Evidence is readable and the app warning is included
+
+### Commands
+```powershell
+python src\run_checks.py                                            # run all checks without the AI
+python src\agent.py "Run a security audit and show me the findings"  # agent uses run_security_checks
+python src\audit_report.py                                          # agent writes reports\baseline-report.md
+```
+
+### Challenges
+- The first report had made-up and outdated fix steps (see the table above)
+  - Fix: moved the fix steps from the model's memory into the tool output (`microsoft_guidance`) and tightened the prompt
+- The evidence was pasted as raw JSON, which was hard to read
+  - Fix: prompt rule "short list, never raw JSON"
+
+### What I learned
+- Let code collect the facts and let the AI explain them. The facts were always right
+- The model's own knowledge is the weak point. Giving it the official guidance in the tool result stopped the made-up steps
+- Every AI report needs a check against the raw data before I trust it
