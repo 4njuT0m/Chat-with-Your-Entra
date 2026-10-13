@@ -331,3 +331,73 @@ python src\audit_report.py                                          # agent writ
 - Let code collect the facts and let the AI explain them. The facts were always right
 - The model's own knowledge is the weak point. Giving it the official guidance in the tool result stopped the made-up steps
 - Every AI report needs a check against the raw data before I trust it
+
+## Stage 4 - EntraGoat test
+
+### What I did
+- Downloaded EntraGoat from `github.com/Semperis/EntraGoat` into a folder outside my repo
+- Installed the Microsoft Graph PowerShell SDK (`Install-Module Microsoft.Graph -Scope CurrentUser`)
+- Deployed scenarios 1, 2 and 3 in the Pearson lab tenant with the setup scripts
+  - 1: Misowned and Dangerous - Owner's Manual to Global Admin
+  - 2: Graph Me the Crown (and Role)
+  - 3: Group MemberShipwreck - Sailed into Admin Waters
+- Saved the scenario credentials and hints in a notes file outside the repo
+- Ran my checks and my agent again and compared with the Stage 3 baseline
+- Let the agent write `reports/entragoat-report.md`
+
+![EntraGoat deployed](../screenshots/22-entragoat-deployed.png)
+![EntraGoat report](../screenshots/23-entragoat-report.png)
+
+### Before and after EntraGoat
+| Check | Baseline | After scenarios 1-3 |
+|---|---|---|
+| Admins without MFA registered | 5 | 8 |
+| Admins without enforced MFA | 6 | 9 |
+| High-risk Graph app permissions | 9 | 10 |
+| Admin roles held by apps | 5 | 6 |
+| Global Administrator assignments | 8 | 11 |
+
+New objects the agent found:
+- 3 new Global Admins without MFA: `EntraGoat-admin-s1`, `EntraGoat-admin-s2`, `EntraGoat-admin-s3`
+- App `Corporate Finance Analytics` with `AppRoleAssignment.ReadWrite.All` (High)
+- App `Finance Analytics Dashboard` with the role Privileged Authentication Administrator
+
+### Agent test
+- Question: "Find privilege escalation paths: which low-privilege users or apps could become Global Admin?"
+- The agent called `run_security_checks` and listed the apps with dangerous permissions and admin roles
+- All facts were correct
+- But it named no users, and it did not say that it had no data to answer that part. The answer looked complete but was not
+
+### Review: how did the agent do?
+- Good: every number, user, app and permission matched the raw tool data, in the chat answer and in the report
+- Good: it spotted all new EntraGoat admins and both new risky apps right away
+- Missed: how a normal user could reach these admins. My tools do not read who owns which apps and groups, so the agent cannot see these paths
+- Missed: it did not say what it could not see
+- Check gap: `sp_admin_roles` only treats Global Administrator as critical. Privileged Authentication Administrator, held by `Finance Analytics Dashboard`, is also a very powerful role and should be marked as critical too
+- Not tested: scenarios 4, 5 and 6
+- I will look at the attack paths by hand in my EntraGoat walkthrough project
+
+### Commands
+```powershell
+cd ..\EntraGoat                                                    # EntraGoat folder, outside my repo
+pwsh -NoProfile                                                    # PowerShell 7
+Install-Module Microsoft.Graph -Scope CurrentUser -Force           # Graph PowerShell SDK
+$tenantId = (Select-String -Path ..\Chat-with-Your-Entra\.env -Pattern '^PEARSON_TENANT_ID=(.+)$').Matches[0].Groups[1].Value.Trim()
+Connect-MgGraph -TenantId $tenantId -NoWelcome -ContextScope Process -Scopes "Application.ReadWrite.All","AppRoleAssignment.ReadWrite.All","User.ReadWrite.All","Directory.ReadWrite.All","RoleManagement.ReadWrite.Directory","Group.ReadWrite.All","GroupMember.ReadWrite.All"   # sign in once, keep it in this window only
+function Connect-MgGraph { if (Get-MgContext) { Write-Host "Using existing Graph session" } else { Microsoft.Graph.Authentication\Connect-MgGraph @args } }   # scripts reuse my sign-in
+.\scenarios\EntraGoat-Scenario1-Setup.ps1 -TenantId $tenantId     # same for scenario 2 and 3
+
+cd ..\Chat-with-Your-Entra
+python src\run_checks.py                                           # checks after EntraGoat
+python src\agent.py "EntraGoat was just deployed in this tenant. Find privilege escalation paths: which low-privilege users or apps could become Global Admin?"
+python src\audit_report.py entragoat-report                        # agent writes reports\entragoat-report.md
+```
+
+### Challenges
+- The setup script stopped with `User canceled authentication`
+  - The Windows sign-in window (WAM) broke off at the permission screen
+- Device code sign-in worked in the browser, but PowerShell kept asking for a new code and timed out
+- Fix: `Connect-MgGraph ... -ContextScope Process` kept the sign-in in memory for this window
+- Every EntraGoat script calls `Connect-MgGraph` again
+  - Fix: a small function with the same name that reuses the existing session
+- I closed the PowerShell window after the setup, because it held an admin sign-in with write permissions
