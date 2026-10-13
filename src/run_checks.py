@@ -17,5 +17,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 print(f"===== {len(findings)} findings =====")
 for f in findings:
+    techniques = ", ".join(t["id"] for t in f.get("mitre_attack", []))
     print(f"[{f['status']:<5}] [{f['severity']:<6}] {f['check']:<22} {f['title']}")
+    if techniques:
+        print(f"{'':<39}MITRE ATT&CK: {techniques}")
 print("\nFull evidence saved to output/findings.json")
