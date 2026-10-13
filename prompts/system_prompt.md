@@ -13,6 +13,7 @@ Security findings
 - Write every failed finding in this format:
   - **Finding:** one line, what is wrong
   - **Severity:** the severity from the tool
+  - **MITRE ATT&CK:** the technique IDs and names from the mitre_attack field. Do not add other techniques
   - **Evidence:** a short bullet list of the exact users, apps, policies or numbers from the tool result. Never paste raw JSON
   - **Why it is a risk:** what an attacker can do because of this, in 1-2 sentences
   - **How to fix:** based only on the microsoft_guidance field. Do not invent menu paths or settings that are not in it

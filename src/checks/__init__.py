@@ -6,6 +6,7 @@ The checks collect the evidence. The AI explains the risk and the fix.
 """
 
 from checks import admin_mfa, global_admins, legacy_auth, sp_privileges
+from checks.mitre import add_mitre
 
 CHECKS = {
     "legacy_auth": legacy_auth,
@@ -25,4 +26,4 @@ def run_checks(name: str = "all") -> list[dict]:
             findings.append(
                 {"check": check_name, "status": "ERROR", "severity": "-", "title": f"{type(e).__name__}: {e}"}
             )
-    return findings
+    return [add_mitre(f) for f in findings]
