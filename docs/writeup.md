@@ -203,6 +203,7 @@ python src\agent.py                                                   # chat mod
 
 ![MCP server provisioning](../screenshots/17-mcp-provision.png)
 ![MCP in VS Code: Global Admins](../screenshots/18-mcp-vscode-global-admins.png)
+![MCP tool calls in Copilot](../screenshots/18b-mcp-tool-calls.png)
 
 #### Commands
 ```powershell
@@ -401,3 +402,33 @@ python src\audit_report.py entragoat-report                        # agent write
 - Every EntraGoat script calls `Connect-MgGraph` again
   - Fix: a small function with the same name that reuses the existing session
 - I closed the PowerShell window after the setup, because it held an admin sign-in with write permissions
+
+## Extra feature 1 - MITRE ATT&CK mapping
+
+### What I did
+- Worked on a branch `feature/mitre-mapping` and merged it with pull request #1
+- `src/checks/mitre.py`: maps each check to MITRE ATT&CK techniques (IDs and names from attack.mitre.org)
+
+| Check | Techniques |
+|---|---|
+| legacy_auth | T1110.003 Password Spraying, T1078.004 Cloud Accounts |
+| admin_mfa_registered | T1110.003 Password Spraying, T1078.004 Cloud Accounts |
+| admin_mfa_enforced | T1078.004 Cloud Accounts |
+| sp_graph_permissions | T1098.003 Additional Cloud Roles, T1098.001 Additional Cloud Credentials |
+| sp_admin_roles | T1098.001 Additional Cloud Credentials, T1078.004 Cloud Accounts |
+| global_admin_count | T1078.004 Cloud Accounts |
+
+- Legacy authentication is mapped to password spraying because Microsoft says more than 99% of password spray attacks use legacy authentication
+- Every finding now has a `mitre_attack` field, and `run_checks.py` prints the technique IDs
+- The system prompt has a new "MITRE ATT&CK" line in the finding format, only from the tool data
+- The audit report has a MITRE column, and the severity count is calculated in Python, not by the AI
+
+### Result
+- `reports/mitre-report.md`: 6 failed checks (High: 5, Medium: 1, Low: 0)
+- Checked against `output/findings.json`: every technique and number matched, no extra techniques
+
+### Commands
+```powershell
+python src\run_checks.py                       # findings with MITRE technique IDs
+python src\audit_report.py mitre-report        # report with MITRE column and severity count
+```
