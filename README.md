@@ -6,7 +6,8 @@ Built as part of the Cybersteps Purple Team program. Tested against a Pearson la
 
 ## What it does
 - Answers questions about the tenant with live data, for example "Who are the Global Admins?"
-- Runs 4 security checks and writes each finding as: Finding, Severity, Evidence, Why it is a risk, How to fix, Reference
+- Runs 4 security checks and writes each finding as: Finding, Severity, MITRE ATT&CK, Evidence, Why it is a risk, How to fix, Reference
+- Maps each finding to MITRE ATT&CK techniques
 - Writes a full audit report in Markdown
 - Only reads data. The app registration has read-only permissions
 
@@ -55,12 +56,12 @@ More diagrams: [docs/architecture.md](docs/architecture.md)
 
 ## Security checks
 
-| Check | Looks for | Based on |
-|---|---|---|
-| `legacy_auth` | Legacy authentication not blocked (no security defaults, no CA policy blocking it) | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/conditional-access/policy-block-legacy-authentication) |
-| `admin_mfa` | Admins without MFA registered, and admins without enforced MFA | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
-| `sp_privileges` | Apps with high-risk Graph permissions or admin roles | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
-| `global_admins` | 5 or more Global Administrators | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
+| Check | Looks for | MITRE ATT&CK | Based on |
+|---|---|---|---|
+| `legacy_auth` | Legacy authentication not blocked (no security defaults, no CA policy blocking it) | T1110.003, T1078.004 | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/conditional-access/policy-block-legacy-authentication) |
+| `admin_mfa` | Admins without MFA registered, and admins without enforced MFA | T1110.003, T1078.004 | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
+| `sp_privileges` | Apps with high-risk Graph permissions or admin roles | T1098.003, T1098.001, T1078.004 | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
+| `global_admins` | 5 or more Global Administrators | T1078.004 | [Microsoft Learn](https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices) |
 
 The checks collect the evidence in Python. The AI only explains the risk, and its fix steps come from the Microsoft guidance that each check returns. Details: [docs/audit-checklist.md](docs/audit-checklist.md)
 
@@ -91,6 +92,7 @@ Reports written by the agent:
 - [reports/baseline-report-v1.md](reports/baseline-report-v1.md) - first report, before the hallucination fixes
 - [reports/baseline-report.md](reports/baseline-report.md) - baseline after the fixes
 - [reports/entragoat-report.md](reports/entragoat-report.md) - with EntraGoat scenarios 1-3
+- [reports/mitre-report.md](reports/mitre-report.md) - with MITRE ATT&CK mapping and severity count
 
 ![Agent: Global Admins without MFA](screenshots/15-agent-admins-no-mfa.png)
 
@@ -101,7 +103,7 @@ Chat-with-Your-Entra/
 ├── src/
 │   ├── graph_client.py     # login (client credentials) and Graph GET requests
 │   ├── entra_data.py       # data functions: users, roles, CA, MFA, security defaults, app permissions
-│   ├── checks/             # 4 security checks
+│   ├── checks/             # 4 security checks + MITRE ATT&CK mapping
 │   ├── tools.py            # 5 tools for the agent
 │   ├── agent.py            # agent loop
 │   ├── pull_entra_data.py  # Stage 1 summary without AI
